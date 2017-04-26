@@ -3,25 +3,32 @@
 const fs = require('fs');
 
 class LogRing {
-    constructor(filePath, maxBytes, mode) {
-        const flags = fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_APPEND;
-        this.fd = fs.openSync(filePath, flags, mode);
+    constructor(maxBytes) {
+        this.limit = maxBytes;
+        this.fd = -1;
+        this.logs = [];
+    }
+
+    open(filePath) {
     }
 
     close() {
-        fs.close(this.fd);
     }
 
-    append(log) {
+    push(log) {
     }
 
-    fetch(options) {
+    shift() {
     }
 
     clear() {
     }
 
-    resize() {
+    rotate() {
+    }
+
+    setLimit(maxBytes) {
+        this.rotate();
     }
 
     forEach() {

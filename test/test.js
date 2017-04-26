@@ -24,10 +24,13 @@ describe('LogRing', () => {
         });
     });
 
+    describe('open()', () => {
+        it('should open', () => {
+        });
+    });
+
     describe('append()', () => {
         it('should append', () => {
-            let log = new LogRing('a.dat', 1024);
-            log.close();
         });
     });
 
