@@ -26,6 +26,8 @@ describe('LogRing', () => {
 
     describe('open()', () => {
         it('should open', () => {
+            let log = new LogRing(1024);
+            log.open('a.log');
         });
     });
 
