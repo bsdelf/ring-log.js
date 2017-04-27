@@ -105,7 +105,7 @@ class LogRing {
             this.shift();
         }
 
-        // append buffer
+        // write tail
         let pos = SIZEOF_HEADER + meta.tail;
         let sizeBeforeEnd = meta.limit - pos;
 
@@ -132,8 +132,12 @@ class LogRing {
 
         // read head
         let buf, pos = SIZEOF_HEADER + meta.head, sz = 4;
+
+        // read part 1
         [buf, pos] = readWarp(meta.fd, pos, meta.limit, sz);
         sz = buf.readUInt32LE();
+
+        // read part 2
         [buf, pos] = readWarp(meta.fd, pos, meta.limit, sz)
         let id = parseInt(buf.toString('hex', 0, 8), 16);
         let str = buf.toString('utf-8', 8);
