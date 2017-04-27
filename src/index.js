@@ -35,21 +35,21 @@ class Meta {
     updateLimit(limit) {
         let buf = Buffer.alloc(4);
         buf.writeInt32LE(limit);
-        fs.writeSync(this.fd, buf, 0);
+        fs.writeSync(this.fd, buf, 0, buf.length, 0);
         this.limit = limit;
     }
 
     updateHead(head) {
         let buf = Buffer.alloc(4);
         buf.writeInt32LE(head);
-        fs.writeSync(this.fd, buf, 4);
+        fs.writeSync(this.fd, buf, 0, buf.length, 4);
         this.head = head;
     }
 
     updateTail(tail) {
         let buf = Buffer.alloc(4);
         buf.writeInt32LE(tail);
-        fs.writeSync(this.fd, buf, 8);
+        fs.writeSync(this.fd, buf, 0, buf.length, 8);
         this.tail = tail;
     }
 }
@@ -77,22 +77,22 @@ class LogRing {
         fs.closeSync(this.fd);
     }
 
-    push(log) {
+    push(str) {
         let meta = this.meta;
 
         // to buffer
         let now = Date.now();
-        let big = ~~(now / MAX_UINT32);
-        let low = (now % MAX_UINT32) - big;
-        let buf = Buffer.alloc(4 + 8 + log.length);
+        let buf = Buffer.alloc(4 + 8 + str.length);
         let offset = 0;
-        offset = buf.writeUInt32LE(buf.length, offset);
-        offset = buf.writeUInt32LE(big, offset);
-        offset = buf.writeUInt32LE(low, offset);
-        offset = buf.write(log, offset);
+        offset = buf.writeUInt32LE(buf.length - 4, offset);
+        let big = ~~(now / MAX_UINT32);
+        offset = buf.writeUInt32BE(big, offset);
+        let low = (now % MAX_UINT32) - big;
+        offset = buf.writeUInt32BE(low, offset);
+        offset = buf.write(str, offset);
 
         // check feasible
-        if (buf.length >= meta.limit - SIZEOF_HEADER) {
+        if (buf.length >= meta.size) {
             throw new Error('Not feasible');
         }
 
@@ -107,34 +107,41 @@ class LogRing {
 
         // append buffer
         let pos = SIZEOF_HEADER + meta.tail;
-        let sizeBeforeLimit = meta.limit - pos;
-        let incpos = (pos, delta) => {
-            pos += delta;
-            if (pos === meta.limit) {
-                pos = SIZEOF_HEADER;
-            }
-            return pos;
-        };
+        let sizeBeforeEnd = meta.limit - pos;
 
         // write part 1
-        let sz1 = Math.min(buf.length, sizeBeforeLimit);
+        let sz1 = Math.min(buf.length, sizeBeforeEnd);
         let written1 = fs.writeSync(meta.fd, buf, 0, sz1, pos);
         // assert (sz1 === written1)
-        pos = incpos(pos, sz1);
+        pos = incpos(pos, meta.limit, sz1);
 
         // write part 2
         let sz2 = buf.length - sz1;
         if (sz2 > 0) {
             let written2 = fs.writeSync(meta.fd, buf, sz1, sz2, pos);
             // assert (sz2 === written2)
-            pos = incpos(pos, sz2);
+            pos = incpos(pos, meta.limit, sz2);
         }
 
         // update meta
-        meta.updateTail(pos);
+        meta.updateTail(pos - SIZEOF_HEADER);
     }
 
     shift() {
+        let meta = this.meta;
+
+        // read head
+        let buf, pos = SIZEOF_HEADER + meta.head, sz = 4;
+        [buf, pos] = readWarp(meta.fd, pos, meta.limit, sz);
+        sz = buf.readUInt32LE();
+        [buf, pos] = readWarp(meta.fd, pos, meta.limit, sz)
+        let id = parseInt(buf.toString('hex', 0, 8), 16);
+        let str = buf.toString('utf-8', 8);
+
+        // update meta
+        meta.updateHead(pos - SIZEOF_HEADER);
+
+        return {id, str};
     }
 
     clear() {
@@ -163,7 +170,7 @@ class LogRing {
 
     full() {
         let meta = this.meta;
-        return meta.tail === ((meta.head - 1 + meta.size) % meta.size);
+        return meta.tail === ((meta.head + meta.size - 1) % meta.size);
     }
 
     empty() {
@@ -187,3 +194,30 @@ class LogRing {
 }
 
 module.exports = LogRing;
+
+function incpos(pos, end, delta) {
+    pos += delta;
+    if (pos >= end) {
+        pos = SIZEOF_HEADER;
+    }
+    return pos;
+}
+
+function readWarp(fd, pos, end, n) {
+    let buf = Buffer.alloc(n);
+
+    let sizeBeforeEnd = end - pos;
+    let sz1 = Math.min(n, sizeBeforeEnd);
+    let read1 = fs.readSync(fd, buf, 0, sz1, pos);
+    // assert(sz1 === read1)
+    pos = incpos(pos, end, sz1);
+
+    let sz2 = buf.length - sz1;
+    if (sz2 > 0) {
+        let read2 = fs.readSync(fd, buf, sz1, sz2, pos);
+        // assert(sz2 === read2)
+        pos = incpos(pos, end, sz2);
+    }
+
+    return [buf, pos];
+}
