@@ -17,11 +17,11 @@ class Meta {
         this.fd = -1;
     }
 
-    load(fd) {
+    loadSync(fd) {
         this.fd = fd;
     }
 
-    init(fd) {
+    initSync(fd) {
         this.head = 0;
         this.tail = 0;
         this.fd = fd;
@@ -32,21 +32,21 @@ class Meta {
         fs.writeSync(this.fd, buf);
     }
 
-    updateLimit(limit) {
+    updateLimitSync(limit) {
         let buf = Buffer.alloc(4);
         buf.writeInt32LE(limit);
         fs.writeSync(this.fd, buf, 0, buf.length, 0);
         this.limit = limit;
     }
 
-    updateHead(head) {
+    updateHeadSync(head) {
         let buf = Buffer.alloc(4);
         buf.writeInt32LE(head);
         fs.writeSync(this.fd, buf, 0, buf.length, 4);
         this.head = head;
     }
 
-    updateTail(tail) {
+    updateTailSync(tail) {
         let buf = Buffer.alloc(4);
         buf.writeInt32LE(tail);
         fs.writeSync(this.fd, buf, 0, buf.length, 8);
@@ -60,7 +60,7 @@ class LogRing {
         this.index = [];
     }
 
-    open(filePath) {
+    openSync(filePath) {
         let meta = this.meta;
 
         try {
@@ -69,15 +69,15 @@ class LogRing {
         } catch (err) {
             // create
             let fd = fs.openSync(filePath, 'w+', DEFAULT_MODE);
-            meta.init(fd);
+            meta.initSync(fd);
         }
     }
 
-    close() {
+    closeSync() {
         fs.closeSync(this.fd);
     }
 
-    push(str) {
+    pushSync(str) {
         let meta = this.meta;
 
         // to buffer
@@ -102,7 +102,7 @@ class LogRing {
             if (free >= buf.length) {
                 break;
             }
-            this.shift();
+            this.shiftSync();
         }
 
         // write tail
@@ -124,26 +124,26 @@ class LogRing {
         }
 
         // update meta
-        meta.updateTail(pos - SIZEOF_HEADER);
+        meta.updateTailSync(pos - SIZEOF_HEADER);
     }
 
-    shift() {
+    shiftSync() {
         let meta = this.meta;
 
         // read head
         let buf, pos = SIZEOF_HEADER + meta.head, sz = 4;
 
         // read part 1
-        [buf, pos] = readWarp(meta.fd, pos, meta.limit, sz);
+        [buf, pos] = readWarpSync(meta.fd, pos, meta.limit, sz);
         sz = buf.readUInt32LE();
 
         // read part 2
-        [buf, pos] = readWarp(meta.fd, pos, meta.limit, sz)
+        [buf, pos] = readWarpSync(meta.fd, pos, meta.limit, sz)
         let id = parseInt(buf.toString('hex', 0, 8), 16);
         let str = buf.toString('utf-8', 8);
 
         // update meta
-        meta.updateHead(pos - SIZEOF_HEADER);
+        meta.updateHeadSync(pos - SIZEOF_HEADER);
 
         return {id, str};
     }
@@ -207,7 +207,7 @@ function incpos(pos, end, delta) {
     return pos;
 }
 
-function readWarp(fd, pos, end, n) {
+function readWarpSync(fd, pos, end, n) {
     let buf = Buffer.alloc(n);
 
     let sizeBeforeEnd = end - pos;
