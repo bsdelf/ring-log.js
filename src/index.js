@@ -17,8 +17,31 @@ class Meta {
         this.fd = -1;
     }
 
+    load(fd) {
+        this.fd = fd;
+    }
+
     loadSync(fd) {
         this.fd = fd;
+    }
+
+    init(fd) {
+        return new Promise((resolve, reject) => {
+            this.head = 0;
+            this.tail = 0;
+            this.fd = fd;
+
+            let buf = Buffer.alloc(SIZEOF_HEADER, 0xff);
+            [this.limit, this.head, this.tail].reduce((offset, val) => buf.writeInt32LE(val, offset), 0);
+
+            fs.write(this.fd, buf, 0, buf.length, 0, (err, n) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve();
+                }
+            });
+        });
     }
 
     initSync(fd) {
@@ -32,11 +55,41 @@ class Meta {
         fs.writeSync(this.fd, buf);
     }
 
+    updateLimit(limit) {
+        return new Promise((resolve, reject) => {
+            let buf = Buffer.alloc(4);
+            buf.writeInt32LE(limit);
+            fs.write(this.fd, buf, 0, buf.length, 0, (err, n) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    this.limit = limit;
+                    resolve();
+                }
+            });
+        });
+    }
+
     updateLimitSync(limit) {
         let buf = Buffer.alloc(4);
         buf.writeInt32LE(limit);
         fs.writeSync(this.fd, buf, 0, buf.length, 0);
         this.limit = limit;
+    }
+
+    updateHead(head) {
+        return new Promise((resolve, reject) => {
+            let buf = Buffer.alloc(4);
+            buf.writeInt32LE(head);
+            fs.write(this.fd, buf, 0, buf.length, 4, (err, n) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    this.head = head;
+                    resolve();
+                }
+            });
+        });
     }
 
     updateHeadSync(head) {
@@ -46,6 +99,20 @@ class Meta {
         this.head = head;
     }
 
+    updateTail(tail) {
+        return new Promise((resolve, reject) => {
+            let buf = Buffer.alloc(4);
+            buf.writeInt32LE(tail);
+            fs.write(this.fd, buf, 0, buf.length, 8, (err, n) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    this.tail = tail;
+                    resolve();
+                }
+            });
+        });
+    }
     updateTailSync(tail) {
         let buf = Buffer.alloc(4);
         buf.writeInt32LE(tail);
@@ -58,6 +125,20 @@ class LogRing {
     constructor(maxBytes) {
         this.meta = new Meta(maxBytes);
         this.index = [];
+    }
+
+    open(filePath) {
+        let meta = this.meta;
+
+        try {
+            // load
+            let stat = fs.statSync(filePath);
+            return Promise.reject(new Error('TODO'));
+        } catch (err) {
+            // create
+            let fd = fs.openSync(filePath, 'w+', DEFAULT_MODE);
+            return meta.init(fd);
+        }
     }
 
     openSync(filePath) {
@@ -73,8 +154,95 @@ class LogRing {
         }
     }
 
+    close() {
+        return new Promise((resolve, reject) => {
+            fs.close(this.fd, err => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve();
+                }
+            });
+        });
+    }
+
     closeSync() {
         fs.closeSync(this.fd);
+    }
+
+    push(str) {
+        let self = this;
+
+        let meta = this.meta;
+
+        // to buffer
+        let now = Date.now();
+        let buf = Buffer.alloc(4 + 8 + str.length);
+        let offset = 0;
+        offset = buf.writeUInt32LE(buf.length - 4, offset);
+        let big = ~~(now / MAX_UINT32);
+        offset = buf.writeUInt32BE(big, offset);
+        let low = (now % MAX_UINT32) - big;
+        offset = buf.writeUInt32BE(low, offset);
+        offset = buf.write(str, offset);
+
+        // check feasible
+        if (buf.length >= meta.size) {
+            reject(new Error('Not feasible'));
+        }
+
+        return ensureSpace().then(writePart1).then(writePart2).then(updateTail);
+
+        function ensureSpace() {
+            if (self.free() >= buf.length) {
+                return Promise.resolve();
+            } else {
+                return self.shift().then(ensureSpace);
+            }
+        }
+
+        function writePart1() {
+            return new Promise((resolve, reject) => {
+                let pos = SIZEOF_HEADER + meta.tail;
+                let sizeBeforeEnd = meta.limit - pos;
+
+                let sz1 = Math.min(buf.length, sizeBeforeEnd);
+                fs.write(meta.fd, buf, 0, sz1, pos, (err, written) => {
+                    if (err) {
+                        reject(err);
+                    }
+                    if (sz1 !== written) {
+                        reject(new Error('Short write'));
+                    }
+                    pos = incpos(pos, meta.limit, sz1);
+                    resolve({pos, sz1});
+                });
+            })
+        }
+
+        function writePart2({pos, sz1}) {
+            return new Promise((resolve, reject) => {
+                let sz2 = buf.length - sz1;
+                if (sz2 > 0) {
+                    fs.write(meta.fd, buf, sz1, sz2, pos, (err, written) => {
+                        if (err) {
+                            reject(err);
+                        }
+                        if (sz2 !== written) {
+                            reject(new Error('Short write'));
+                        }
+                        pos = incpos(pos, meta.limit, sz2);
+                        resolve(pos);
+                    });
+                } else {
+                    resolve(pos);
+                }
+            });
+        }
+
+        function updateTail(pos) {
+            return meta.updateTail(pos - SIZEOF_HEADER);
+        }
     }
 
     pushSync(str) {
@@ -125,6 +293,41 @@ class LogRing {
 
         // update meta
         meta.updateTailSync(pos - SIZEOF_HEADER);
+    }
+
+    shift() {
+        let meta = this.meta;
+
+        let data;
+
+        return readPart1().then(readPart2).then(updateHead).then(ret);
+
+        function readPart1() {
+            let buf, pos = SIZEOF_HEADER + meta.head, sz = 4;
+            return readWarp(meta.fd, pos, meta.limit, sz)
+                .then(([buf, pos]) => {
+                    sz = buf.readUInt32LE();
+                    return Promise.resolve({pos, sz});
+                });
+        }
+
+        function readPart2({pos, sz}) {
+            return readWarp(meta.fd, pos, meta.limit, sz)
+                .then(([buf, pos]) => {
+                    let id = parseInt(buf.toString('hex', 0, 8), 16);
+                    let str = buf.toString('utf-8', 8);
+                    data = {id, str};
+                    return Promise.resolve(pos);
+                });
+        }
+
+        function updateHead(pos) {
+            return meta.updateHead(pos - SIZEOF_HEADER);
+        }
+
+        function ret() {
+            return Promise.resolve(data);
+        }
     }
 
     shiftSync() {
@@ -205,6 +408,49 @@ function incpos(pos, end, delta) {
         pos = SIZEOF_HEADER;
     }
     return pos;
+}
+
+function readWarp(fd, pos, end, n) {
+    let buf = Buffer.alloc(n);
+
+    return readPart1().then(readPart2);
+
+    function readPart1() {
+        return new Promise((resolve, reject) => {
+            let sizeBeforeEnd = end - pos;
+            let sz1 = Math.min(n, sizeBeforeEnd);
+            fs.read(fd, buf, 0, sz1, pos, (err, read) => {
+                if (err) {
+                    reject(err);
+                }
+                if (read != sz1) {
+                    reject(new Error('Short read'));
+                }
+                pos = incpos(pos, end, sz1);
+                resolve({pos, sz1});
+            });
+        });
+    }
+
+    function readPart2({pos, sz1}) {
+        return new Promise((resolve, reject) => {
+            let sz2 = buf.length - sz1;
+            if (sz2 > 0) {
+                fs.read(fd, buf, sz1, sz2, pos, (err, read) => {
+                    if (err) {
+                        reject(err);
+                    }
+                    if (read != sz2) {
+                        reject(new Error('Short read'));
+                    }
+                    pos = incpos(pos, end, sz2);
+                    resolve([buf, pos]);
+                });
+            } else {
+                resolve([buf, pos]);
+            }
+        });
+    }
 }
 
 function readWarpSync(fd, pos, end, n) {
