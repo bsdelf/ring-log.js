@@ -170,19 +170,18 @@ class LogRing {
         fs.closeSync(this.fd);
     }
 
-    push(str) {
+    push({id=Date.now(), str=''}) {
         let self = this;
 
         let meta = this.meta;
 
         // to buffer
-        let now = Date.now();
         let buf = Buffer.alloc(4 + 8 + str.length);
         let offset = 0;
         offset = buf.writeUInt32LE(buf.length - 4, offset);
-        let big = ~~(now / MAX_UINT32);
+        let big = ~~(id / MAX_UINT32);
         offset = buf.writeUInt32BE(big, offset);
-        let low = (now % MAX_UINT32) - big;
+        let low = (id % MAX_UINT32) - big;
         offset = buf.writeUInt32BE(low, offset);
         offset = buf.write(str, offset);
 
@@ -245,19 +244,19 @@ class LogRing {
         }
     }
 
-    pushSync(str) {
+    pushSync({id=Date.now(), str=''}) {
+        console.log('hit');
         let meta = this.meta;
 
         // to buffer
-        let now = Date.now();
         let buf = Buffer.alloc(4 + 8 + str.length);
         let offset = 0;
         offset = buf.writeUInt32LE(buf.length - 4, offset);
-        let big = ~~(now / MAX_UINT32);
+        let big = ~~(id / MAX_UINT32);
         offset = buf.writeUInt32BE(big, offset);
-        let low = (now % MAX_UINT32) - big;
+        let low = (id % MAX_UINT32) - big;
         offset = buf.writeUInt32BE(low, offset);
-        offset = buf.write(str, offset);
+        offset = buf.write(str, offset, str.ength, 'utf8');
 
         // check feasible
         if (buf.length >= meta.size) {
@@ -298,7 +297,7 @@ class LogRing {
     shift() {
         let meta = this.meta;
 
-        let data;
+        let item;
 
         return readPart1().then(readPart2).then(updateHead).then(ret);
 
@@ -315,8 +314,8 @@ class LogRing {
             return readWarp(meta.fd, pos, meta.limit, sz)
                 .then(([buf, pos]) => {
                     let id = parseInt(buf.toString('hex', 0, 8), 16);
-                    let str = buf.toString('utf-8', 8);
-                    data = {id, str};
+                    let str = buf.toString('utf8', 8);
+                    item = {id, str};
                     return Promise.resolve(pos);
                 });
         }
@@ -326,7 +325,7 @@ class LogRing {
         }
 
         function ret() {
-            return Promise.resolve(data);
+            return Promise.resolve(item);
         }
     }
 
