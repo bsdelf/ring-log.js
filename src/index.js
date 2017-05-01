@@ -170,10 +170,16 @@ class LogRing {
         fs.closeSync(this.fd);
     }
 
-    push({id=Date.now(), str=''}) {
+    push(item) {
         let self = this;
 
         let meta = this.meta;
+
+        // handle parameter
+        if (typeof item === 'string') {
+            item = {str: item};
+        }
+        let {id=Date.now(), str=''} = item;
 
         // to buffer
         let buf = Buffer.alloc(4 + 8 + str.length);
@@ -244,9 +250,14 @@ class LogRing {
         }
     }
 
-    pushSync({id=Date.now(), str=''}) {
-        console.log('hit');
+    pushSync(item) {
         let meta = this.meta;
+
+        // handle parameter
+        if (typeof item === 'string') {
+            item = {str: item};
+        }
+        let {id=Date.now(), str=''} = item;
 
         // to buffer
         let buf = Buffer.alloc(4 + 8 + str.length);
