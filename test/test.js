@@ -1,9 +1,9 @@
 'use strict';
 
 const assert = require('assert');
-const LogRing = require('../src')
+const RingLog = require('../src')
 
-describe('LogRing', () => {
+describe('RingLog', () => {
     describe('constructor()', () => {
         it('should throw when filePath or maxBytes is missing', () => {
             assert.throws(() => {
@@ -26,7 +26,7 @@ describe('LogRing', () => {
 
     describe('open()', () => {
         it('should open', () => {
-            let log = new LogRing(1024);
+            let log = new RingLog(1024);
             log.open('a.log');
         });
     });

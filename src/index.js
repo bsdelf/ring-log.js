@@ -121,7 +121,7 @@ class Meta {
     }
 }
 
-class LogRing {
+class RingLog {
     constructor(maxBytes) {
         this.meta = new Meta(maxBytes);
         this.index = [];
@@ -410,7 +410,7 @@ class LogRing {
     }
 }
 
-module.exports = LogRing;
+module.exports = RingLog;
 
 function incpos(pos, end, delta) {
     pos += delta;
