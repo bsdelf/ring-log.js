@@ -317,7 +317,7 @@ class LogRing {
             return readWarp(meta.fd, pos, meta.limit, sz)
                 .then(([buf, pos]) => {
                     sz = buf.readUInt32LE();
-                    return Promise.resolve({pos, sz});
+                    return {pos, sz};
                 });
         }
 
@@ -327,7 +327,7 @@ class LogRing {
                     let id = parseInt(buf.toString('hex', 0, 8), 16);
                     let str = buf.toString('utf8', 8);
                     item = {id, str};
-                    return Promise.resolve(pos);
+                    return pos;
                 });
         }
 
@@ -336,7 +336,7 @@ class LogRing {
         }
 
         function ret() {
-            return Promise.resolve(item);
+            return item;
         }
     }
 
