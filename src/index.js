@@ -155,8 +155,9 @@ class RingLog {
     }
 
     close() {
+        let meta = this.meta;
         return new Promise((resolve, reject) => {
-            fs.close(this.fd, err => {
+            fs.close(meta.fd, err => {
                 if (err) {
                     reject(err);
                 } else {
@@ -167,7 +168,8 @@ class RingLog {
     }
 
     closeSync() {
-        fs.closeSync(this.fd);
+        let meta = this.meta;
+        fs.closeSync(meta.fd);
     }
 
     push(item) {
