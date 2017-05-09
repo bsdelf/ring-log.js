@@ -13,16 +13,27 @@ function genPath() {
 describe('RingLog', () => {
     describe('#openSync()', () => {
         let logPath;
+        let limit = 128;
 
         before(() => {
             logPath = genPath();
         });
 
         it('create log if it does not exist', () => {
-            let log = new RingLog(1024);
+            let log = new RingLog(limit);
             log.openSync(logPath);
             log.closeSync();
             assert.isTrue(fs.existsSync(logPath));
+        });
+
+        it('load existing log', () => {
+            let log = new RingLog();
+            log.openSync(logPath);
+            assert.strictEqual(limit, log.limit);
+            assert.strictEqual(0, log.used);
+            assert.isFalse(log.isFull);
+            assert.isTrue(log.isEmpty);
+            log.closeSync();
         });
 
         after(() => {
@@ -86,8 +97,8 @@ describe('RingLog', () => {
                 for (let i = 0; i < n; ++i) {
                     let ch = String.fromCharCode('a'.charCodeAt(0) + i);
                     let {id, str} = log.shiftSync();
-                    assert.strictEqual(id, i);
-                    assert.strictEqual(str, ch);
+                    assert.strictEqual(i, id);
+                    assert.strictEqual(ch, str);
                 }
             });
             assert.isFalse(log.isFull);

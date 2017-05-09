@@ -9,12 +9,14 @@ const DEFAULT_MODE = parseInt(666, 8);
 const MAX_UINT32 = 0xffffffff;
 
 class Meta {
-    constructor(maxBytes) {
-        this.limit = maxBytes >= (SIZEOF_HEADER + 1) ? maxBytes : (SIZEOF_HEADER + 1);
-        this.head = -1;
-        this.tail = -1;
-        this.size = this.limit - SIZEOF_HEADER;
-        this.fd = -1;
+    constructor(limit) {
+        if (limit) {
+            this.limit = limit >= (SIZEOF_HEADER + 1) ? limit : (SIZEOF_HEADER + 1);
+            this.head = -1;
+            this.tail = -1;
+            this.size = this.limit - SIZEOF_HEADER;
+            this.fd = -1;
+        }
     }
 
     load(fd) {
@@ -23,6 +25,16 @@ class Meta {
 
     loadSync(fd) {
         this.fd = fd;
+
+        let buf = Buffer.alloc(SIZEOF_HEADER, 0xff);
+        fs.readSync(this.fd, buf, 0, buf.length, 0);
+
+        let offset = 0;
+
+        ['limit', 'head', 'tail'].reduce((offset, prop) => {
+            this[prop] = buf.readInt32LE(offset);
+            return offset + 4;
+        }, 0);
     }
 
     init(fd) {
@@ -52,7 +64,7 @@ class Meta {
         let buf = Buffer.alloc(SIZEOF_HEADER, 0xff);
         [this.limit, this.head, this.tail].reduce((offset, val) => buf.writeInt32LE(val, offset), 0);
 
-        fs.writeSync(this.fd, buf);
+        fs.writeSync(this.fd, buf, 0, buf.length, 0);
     }
 
     updateLimit(limit) {
@@ -122,8 +134,8 @@ class Meta {
 }
 
 class RingLog {
-    constructor(maxBytes) {
-        this.meta = new Meta(maxBytes);
+    constructor(limit) {
+        this.meta = new Meta(limit);
         this.index = [];
     }
 
@@ -144,11 +156,11 @@ class RingLog {
     openSync(filePath) {
         let meta = this.meta;
 
-        try {
-            // load
-            let stat = fs.statSync(filePath);
-        } catch (err) {
-            // create
+        let exists = fs.existsSync(filePath);
+        if (exists) {
+            let fd = fs.openSync(filePath, 'a+');
+            meta.loadSync(fd);
+        } else {
             let fd = fs.openSync(filePath, 'w+', DEFAULT_MODE);
             meta.initSync(fd);
         }
@@ -169,6 +181,7 @@ class RingLog {
 
     closeSync() {
         let meta = this.meta;
+        fs.fsyncSync(meta.fd);
         fs.closeSync(meta.fd);
     }
 
@@ -376,7 +389,12 @@ class RingLog {
     rotate() {
     }
 
-    setLimit(maxBytes) {
+    get limit() {
+        let meta = this.meta;
+        return meta.limit;
+    }
+
+    set limit(limit) {
         this.rotate();
     }
 
