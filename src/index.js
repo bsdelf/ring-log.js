@@ -199,7 +199,7 @@ class RingLog {
         return ensureSpace().then(writePart1).then(writePart2).then(updateTail);
 
         function ensureSpace() {
-            if (self.free() >= buf.length) {
+            if (self.free >= buf.length) {
                 return Promise.resolve();
             } else {
                 return self.shift().then(ensureSpace);
@@ -276,8 +276,7 @@ class RingLog {
 
         // ensure space
         while (true) {
-            let free = this.free();
-            if (free >= buf.length) {
+            if (this.free >= buf.length) {
                 break;
             }
             this.shiftSync();
@@ -309,6 +308,10 @@ class RingLog {
         let meta = this.meta;
 
         let item;
+
+        if (this.isEmpty) {
+            Promise.reject(new Error('Not available'));
+        }
 
         return readPart1().then(readPart2).then(updateHead).then(ret);
 
@@ -343,6 +346,10 @@ class RingLog {
     shiftSync() {
         let meta = this.meta;
 
+        if (this.isEmpty) {
+            throw new Error('Not available');
+        }
+
         // read head
         let buf, pos = SIZEOF_HEADER + meta.head, sz = 4;
 
@@ -371,12 +378,12 @@ class RingLog {
         this.rotate();
     }
 
-    free() {
+    get free() {
         let meta = this.meta;
-        return meta.size - this.used();
+        return meta.size - this.used;
     }
 
-    used() {
+    get used() {
         let meta = this.meta;
         if (meta.tail >= meta.head) {
             return meta.tail - meta.head;
@@ -385,14 +392,18 @@ class RingLog {
         }
     }
 
-    full() {
+    get isFull() {
         let meta = this.meta;
         return meta.tail === ((meta.head + meta.size - 1) % meta.size);
     }
 
-    empty() {
+    get isEmpty() {
         let meta = this.meta;
         return meta.tail === meta.head;
+    }
+
+    static get META_SIZE() {
+        return SIZEOF_HEADER + 1;
     }
 
     // functional
