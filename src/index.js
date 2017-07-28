@@ -1,5 +1,3 @@
-'use strict';
-
 const fs = require('fs');
 
 const SIZEOF_HEADER = 4 /* limit */ + 4 /* head */ + 4 /* tail */;
